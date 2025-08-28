@@ -1,0 +1,48 @@
+model_id: Qwen/Qwen2.5-7B
+
+# Conservative to kill OOMs on 16GB. You can bump later (768/1024/2048) once stable.
+seq_length: 512
+
+# QLoRA quantization
+load_in_4bit: true
+bnb_compute_dtype: float16          # slightly lower memory than bf16 on some stacks
+gradient_checkpointing: true
+
+lora:
+  # Very light to minimize gradient/optimizer VRAM
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  # Start with attention q/v only; add k/o or MLP later once stable
+  target_modules: [q_proj, v_proj]
+  bias: none
+
+train:
+  lr: 1.0e-4
+  weight_decay: 0.0
+  warmup_ratio: 0.03
+  num_epochs: 1
+  max_steps: null                   # code coerces to -1 → epoch-based
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  # Keep tokens/update reasonable: 512 * 128 ≈ 65k
+  gradient_accumulation_steps: 128
+  logging_steps: 25
+  eval_steps: 250
+  save_steps: 500
+  save_total_limit: 3
+  lr_scheduler_type: cosine
+
+misc:
+  attn_implementation: sdpa        # FA2 not installed; SDPA is fast & stable
+  compile: false                   # don't compile quantized (QLoRA) models
+  tf32: true
+  bf16: true                       # compute dtype for non-quant parts
+  fp16: false
+  # Optional: force some CPU offload at init to prevent OOM
+  max_memory_gpu_gib: 15.5         # leave ~0.5GB headroom
+  cpu_ram_gib: 120                 # cap for CPU offload during init
+  deepspeed_config: null           # set to "configs/ds_zero2_offload.json" if needed
+
+optim:
+  name: paged_adamw_8bit           # huge VRAM saver for optimizer state
